@@ -52,10 +52,8 @@ func (auth *AuthMiddleware) RequireAuth(next echo.HandlerFunc) echo.HandlerFunc 
 			return echo.ErrInternalServerError
 		}
 
-		auth.server.Logger.Info().Msgf("userid in auth: %v", userID)
-
 		c.Set(string(ContextIDPUserID), claims.Subject)
-		c.Set(string(ContextUserID), userID)
+		c.Set("user_id", userID)
 		return next(c)
 	})
 }

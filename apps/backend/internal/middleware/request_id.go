@@ -13,7 +13,7 @@ const (
 func RequestID() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			rqstId := util.GenerateUUID()
+			rqstId := util.GenerateUUIDStr()
 			c.Set(RequestIDKey, rqstId)
 			c.Response().Header().Set(RequestIDHeader, rqstId)
 			return next(c)

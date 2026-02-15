@@ -11,10 +11,10 @@ type Handlers struct {
 	Services *service.Services
 }
 
-func NewHandlers(s *server.Server, services *service.Services) *Handlers {
+func NewHandlers(server *server.Server, services *service.Services) *Handlers {
 	return &Handlers{
-		Health:   NewHealthHandler(s),
-		Monitor:  NewMonitorHandler(s),
+		Health:   NewHealthHandler(server),
+		Monitor:  NewMonitorHandler(server, &services.MonitorService),
 		Services: services,
 	}
 }

@@ -6,11 +6,13 @@ import (
 )
 
 type Services struct {
-	Auth AuthService
+	Auth           AuthService
+	MonitorService MonitorService
 }
 
 func NewServices(s *server.Server, repos *repository.Repositories) *Services {
 	return &Services{
-		Auth: *NewAuthService(s),
+		Auth:           *NewAuthService(s, repos.UserRepo),
+		MonitorService: *NewMonitorService(s, repos.MonitorRepo),
 	}
 }

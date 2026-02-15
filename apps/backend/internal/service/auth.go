@@ -5,20 +5,23 @@ import (
 
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/google/uuid"
-	"github.com/pulkitbhatt/ikiru/internal/repository"
 	"github.com/pulkitbhatt/ikiru/internal/server"
 )
 
-type AuthService struct {
-	server   *server.Server
-	userRepo *repository.UserRepo
+type UserRepository interface {
+	EnsureUser(ctx context.Context, idpUserID string, email string) (uuid.UUID, error)
 }
 
-func NewAuthService(s *server.Server) *AuthService {
+type AuthService struct {
+	server   *server.Server
+	userRepo UserRepository
+}
+
+func NewAuthService(s *server.Server, userRepo UserRepository) *AuthService {
 	clerk.SetKey(s.Config.Auth.SecretKey)
 	return &AuthService{
 		server:   s,
-		userRepo: repository.NewUserRepo(s),
+		userRepo: userRepo,
 	}
 }
 
