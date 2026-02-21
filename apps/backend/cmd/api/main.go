@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/pulkitbhatt/ikiru/internal/config"
@@ -25,7 +26,7 @@ func main() {
 	}
 
 	logger := logger.New(cfg)
-	logger.Info().Msg("Starting server")
+	logger.Info().Msg("Starting server...")
 
 	if err := database.Migrate(context.Background(), &logger, cfg); err != nil {
 		logger.Fatal().Err(err).Msg("failed to migrate database")
@@ -43,7 +44,7 @@ func main() {
 	router := router.NewRouter(svr, handlers)
 	svr.Setup(router)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
 		if err := svr.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
