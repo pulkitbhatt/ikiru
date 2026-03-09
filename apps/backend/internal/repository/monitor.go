@@ -131,3 +131,94 @@ RETURNING
 
 	return dueMonitors, nil
 }
+
+func (mr *MonitorRepo) GetMonitorById(
+	ctx context.Context,
+	id string,
+	ownerUserID string,
+) (model.Monitor, error) {
+	query := `
+	SELECT
+		id,
+		owner_user_id,
+		name,
+		description,
+		type,
+		url,
+		interval_seconds,
+		timeout_ms,
+		status,
+		deleted_at,
+		last_checked_at,
+		next_check_at,
+		created_at,
+		updated_at
+	FROM monitors
+	WHERE id = $1 AND owner_user_id = $2
+	`
+	row, err := mr.db.Query(ctx, query, id, ownerUserID)
+	if err != nil {
+		return model.Monitor{}, fmt.Errorf("query monitor: %w", err)
+	}
+	defer row.Close()
+	if !row.Next() {
+		return model.Monitor{}, fmt.Errorf("monitor not found")
+	}
+	var monitor model.Monitor
+	if err := row.Scan(
+		&monitor.ID,
+		&monitor.OwnerUserID,
+		&monitor.Name,
+		&monitor.Description,
+		&monitor.Type,
+		&monitor.URL,
+		&monitor.IntervalSeconds,
+		&monitor.TimeoutMs,
+		&monitor.Status,
+		&monitor.DeletedAt,
+		&monitor.LastCheckedAt,
+		&monitor.NextCheckAt,
+		&monitor.CreatedAt,
+		&monitor.UpdatedAt,
+	); err != nil {
+		return model.Monitor{}, fmt.Errorf("scan monitor: %w", err)
+	}
+	return monitor, nil
+}
+
+func (mr *MonitorRepo) GetMonitors(
+	ctx context.Context,
+	userID string,
+	limit int,
+	offset int,
+) ([]model.Monitor, error) {
+	query := `
+	SELECT id, name, owner_user_id, created_at 
+	FROM monitors 
+	WHERE owner_user_id = $1 
+	ORDER BY created_at DESC
+	LIMIT $2 OFFSET $3
+	`
+	rows, err := mr.db.Query(ctx, query, userID, limit, offset)
+	if err != nil {
+		return []model.Monitor{}, fmt.Errorf("query monitors: %w", err)
+	}
+	defer rows.Close();
+	monitors := make([]model.Monitor, 0, limit);
+	for rows.Next(){
+		var m model.Monitor
+		if err := rows.Scan(
+			&m.ID,
+			&m.Name,
+			&m.OwnerUserID,
+			&m.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan monitor: %w", err)
+		}
+		monitors = append(monitors, m);
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration: %w" ,err);
+	}
+	return monitors, nil;
+}

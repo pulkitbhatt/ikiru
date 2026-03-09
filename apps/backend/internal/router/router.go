@@ -25,6 +25,8 @@ func NewRouter(s *server.Server, h *handler.Handlers) *echo.Echo {
 	)
 
 	public.GET("/health", h.Health.CheckHealth)
-	pvt.POST("/monitor", h.Monitor.CreateMonitor)
+	pvt.POST("/monitors", h.Monitor.CreateMonitor)
+	pvt.GET("/monitors", h.Monitor.GetMonitors)
+	pvt.GET("/monitors/:monitorId", h.Monitor.GetMonitorById)
 	return router
 }
