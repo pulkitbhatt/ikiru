@@ -16,6 +16,7 @@ type Config struct {
 	Server   ServerConfig   `koanf:"server" validate:"required"`
 	Auth     AuthConfig     `koanf:"auth" validate:"required"`
 	Database DatabaseConfig `koanf:"database" validate:"required"`
+	Redis    RedisConfig    `koanf:"redis" validate:"required"`
 }
 
 type Primary struct {
@@ -38,6 +39,11 @@ type DatabaseConfig struct {
 	Password string `koanf:"password" validate:"required"`
 	Name     string `koanf:"name" validate:"required"`
 	SSLMode  string `koanf:"sslmode" validate:"required"`
+}
+
+type RedisConfig struct {
+	Address string `koanf:"address" validate:"required"`
+	Stream  string `koanf:"stream" validate:"required"`
 }
 
 func LoadConfig() (*Config, error) {

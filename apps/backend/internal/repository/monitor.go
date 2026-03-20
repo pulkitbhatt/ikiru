@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pulkitbhatt/ikiru/internal/handler/dto"
 	"github.com/pulkitbhatt/ikiru/internal/model"
 )
 
@@ -63,32 +62,32 @@ func (mr *MonitorRepo) CreateMonitor(
 func (r *MonitorRepo) ClaimDueMonitors(
 	ctx context.Context,
 	limit int,
-) ([]dto.DueMonitor, error) {
+) ([]model.Monitor, error) {
 
 	const query = `
-UPDATE monitors
-SET next_check_at = GREATEST(
-    next_check_at + (interval_seconds * INTERVAL '1 second'),
-    now()
-)
-WHERE id IN (
-    SELECT id
-    FROM monitors
-    WHERE
-        next_check_at <= now()
-        AND status = 'active'
-        AND deleted_at IS NULL
-    ORDER BY next_check_at
-    FOR UPDATE SKIP LOCKED
-    LIMIT $1
-)
-RETURNING
-    id,
-    owner_user_id,
-    type,
-    url,
-    timeout_ms
-`
+		UPDATE monitors
+		SET next_check_at = GREATEST(
+			next_check_at + (interval_seconds * INTERVAL '1 second'),
+			now()
+		)
+		WHERE id IN (
+			SELECT id
+			FROM monitors
+			WHERE
+				next_check_at <= now()
+				AND status = 'active'
+				AND deleted_at IS NULL
+			ORDER BY next_check_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT $1
+		)
+		RETURNING
+			id,
+			owner_user_id,
+			type,
+			url,
+			timeout_ms
+	`
 
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -102,14 +101,14 @@ RETURNING
 	}
 	defer rows.Close()
 
-	dueMonitors := make([]dto.DueMonitor, 0, limit)
+	dueMonitors := make([]model.Monitor, 0, limit)
 
 	for rows.Next() {
-		var m dto.DueMonitor
+		var m model.Monitor
 
 		err := rows.Scan(
 			&m.ID,
-			&m.UserId,
+			&m.OwnerUserID,
 			&m.Type,
 			&m.URL,
 			&m.TimeoutMs,
@@ -130,4 +129,35 @@ RETURNING
 	}
 
 	return dueMonitors, nil
+}
+
+func (r *MonitorRepo) InsertCheckResult(
+	ctx context.Context,
+	rec model.MonitorCheckResult,
+) error {
+
+	query := `
+        INSERT INTO monitor_check_results (
+            id, monitor_id, region, scheduled_at,
+            started_at, finished_at, status,
+            http_status, latency_ms, error
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        ON CONFLICT (monitor_id, region, scheduled_at)
+        DO NOTHING;
+    `
+
+	_, err := r.db.Exec(ctx, query,
+		rec.ID,
+		rec.MonitorID,
+		rec.Region,
+		rec.ScheduledAt,
+		rec.StartedAt,
+		rec.FinishedAt,
+		rec.Status,
+		rec.HTTPStatus,
+		rec.LatencyMs,
+		rec.Error,
+	)
+	return err
 }

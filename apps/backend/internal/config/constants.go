@@ -5,3 +5,9 @@ const (
 	EnvDev  = "dev"
 	EnvProd = "prod"
 )
+
+var RegionsToMonitor = []string{"us", "eu", "apac"}
+
+const (
+	WorkerMaxConcurrency = 50
+)
