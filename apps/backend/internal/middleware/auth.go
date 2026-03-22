@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"strings"
 	"time"
 
 	"github.com/clerk/clerk-sdk-go/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/labstack/echo/v4"
 
 	"github.com/pulkitbhatt/ikiru/internal/server"
@@ -41,7 +43,27 @@ func (auth *AuthMiddleware) RequireAuth(next echo.HandlerFunc) echo.HandlerFunc 
 			return echo.ErrUnauthorized
 		}
 
-		userID, err := auth.authService.EnsureUser(c.Request().Context(), claims.Subject, "")
+		authHeader := c.Request().Header.Get("Authorization")
+		if authHeader == "" {
+			return echo.ErrUnauthorized
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+		if err != nil {
+			auth.server.Logger.Error().
+				Err(err).
+				Msg("failed to parse jwt")
+			return echo.ErrUnauthorized
+		}
+
+		claimsMap := token.Claims.(jwt.MapClaims)
+
+		email, _ := claimsMap["email"].(string)
+		auth.server.Logger.Debug().Msgf("extracted email: %v", email)
+
+		userID, err := auth.authService.EnsureUser(c.Request().Context(), claims.Subject, email)
 		if err != nil {
 			auth.server.Logger.Error().
 				Err(err).

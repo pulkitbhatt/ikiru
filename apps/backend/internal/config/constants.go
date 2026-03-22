@@ -11,3 +11,8 @@ var RegionsToMonitor = []string{"us", "eu", "apac"}
 const (
 	WorkerMaxConcurrency = 50
 )
+
+const (
+	EventIncidentCreated  = "incident.created"
+	EventIncidentResolved = "incident.resolved"
+)

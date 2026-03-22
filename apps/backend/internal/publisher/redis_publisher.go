@@ -2,10 +2,7 @@ package publisher
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
-	"github.com/pulkitbhatt/ikiru/internal/queue"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 )
@@ -26,18 +23,11 @@ func NewRedisPublisher(rdb *redis.Client, logger *zerolog.Logger) *RedisPublishe
 	}
 }
 
-func (p *RedisPublisher) Publish(ctx context.Context, job queue.MonitorJob) error {
-	stream := fmt.Sprintf("monitor_checks:%s", job.Region)
-
-	payload, err := json.Marshal(job)
-	if err != nil {
-		return err
-	}
-
+func (p *RedisPublisher) Publish(ctx context.Context, msg Message) error {
 	return p.rdb.XAdd(ctx, &redis.XAddArgs{
-		Stream: stream,
+		Stream: msg.Destination,
 		Values: map[string]any{
-			"payload": payload,
+			"payload": msg.Payload,
 		},
 		MaxLen: StreamMaxLen,
 		Approx: true,

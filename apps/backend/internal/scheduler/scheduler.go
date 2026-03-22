@@ -2,10 +2,13 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/pulkitbhatt/ikiru/internal/config"
 	"github.com/pulkitbhatt/ikiru/internal/model"
+	"github.com/pulkitbhatt/ikiru/internal/publisher"
 	"github.com/pulkitbhatt/ikiru/internal/queue"
 	"github.com/pulkitbhatt/ikiru/internal/util"
 	"github.com/rs/zerolog"
@@ -16,21 +19,17 @@ const (
 	PollInterval      = 10
 )
 
-type Publisher interface {
-	Publish(ctx context.Context, job queue.MonitorJob) error
-}
-
 type MonitorRepo interface {
 	ClaimDueMonitors(context.Context, int) ([]model.Monitor, error)
 }
 
 type Scheduler struct {
-	publisher   Publisher
+	publisher   publisher.Publisher
 	monitorRepo MonitorRepo
 	logger      *zerolog.Logger
 }
 
-func New(pub Publisher, monitorRepo MonitorRepo, logger *zerolog.Logger) *Scheduler {
+func New(pub publisher.Publisher, monitorRepo MonitorRepo, logger *zerolog.Logger) *Scheduler {
 	return &Scheduler{
 		publisher:   pub,
 		monitorRepo: monitorRepo,
@@ -69,7 +68,13 @@ func (s *Scheduler) Run(ctx context.Context) {
 						TimeoutMs:   m.TimeoutMs,
 						ScheduledAt: time.Now(),
 					}
-					if err := s.publisher.Publish(ctx, job); err != nil {
+					stream := fmt.Sprintf("monitor_checks:%s", region)
+					payload, _ := json.Marshal(job)
+					msg := publisher.Message{
+						Destination: stream,
+						Payload:     payload,
+					}
+					if err := s.publisher.Publish(ctx, msg); err != nil {
 						s.logger.Error().
 							Err(err).
 							Str("job_id", job.JobID).

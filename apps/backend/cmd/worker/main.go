@@ -31,7 +31,9 @@ func main() {
 	}
 	defer db.Pool.Close()
 
-	repo := repository.NewMonitorRepo(db.Pool)
+	monitorCheckRepo := repository.NewMonitorCheckRepo(db.Pool)
+	outboxRepo := repository.NewOutboxRepo(db.Pool)
+	incidentRepo := repository.NewIncidentRepo(db.Pool, outboxRepo)
 	redisClient := queue.NewRedis(cfg.Redis.Address)
 	workerName := fmt.Sprintf("worker-%d", os.Getpid())
 
@@ -41,7 +43,8 @@ func main() {
 
 	worker := worker.NewWorker(
 		redisClient,
-		repo,
+		monitorCheckRepo,
+		incidentRepo,
 		cfg.Redis.Stream,
 		workerName,
 		config.WorkerMaxConcurrency,

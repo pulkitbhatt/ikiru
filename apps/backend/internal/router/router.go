@@ -1,7 +1,6 @@
 package router
 
 import (
-	clerkhttp "github.com/clerk/clerk-sdk-go/v2/http"
 	"github.com/labstack/echo/v4"
 
 	"github.com/pulkitbhatt/ikiru/internal/handler"
@@ -14,7 +13,7 @@ func NewRouter(s *server.Server, h *handler.Handlers) *echo.Echo {
 	router := echo.New()
 	api := router.Group("/v1",
 		middleware.RequestID(),
-		echo.WrapMiddleware(clerkhttp.WithHeaderAuthorization()),
+		// echo.WrapMiddleware(clerkhttp.WithHeaderAuthorization()),
 	)
 
 	public := api.Group("")

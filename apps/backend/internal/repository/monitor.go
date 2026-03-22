@@ -130,34 +130,3 @@ func (r *MonitorRepo) ClaimDueMonitors(
 
 	return dueMonitors, nil
 }
-
-func (r *MonitorRepo) InsertCheckResult(
-	ctx context.Context,
-	rec model.MonitorCheckResult,
-) error {
-
-	query := `
-        INSERT INTO monitor_check_results (
-            id, monitor_id, region, scheduled_at,
-            started_at, finished_at, status,
-            http_status, latency_ms, error
-        )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-        ON CONFLICT (monitor_id, region, scheduled_at)
-        DO NOTHING;
-    `
-
-	_, err := r.db.Exec(ctx, query,
-		rec.ID,
-		rec.MonitorID,
-		rec.Region,
-		rec.ScheduledAt,
-		rec.StartedAt,
-		rec.FinishedAt,
-		rec.Status,
-		rec.HTTPStatus,
-		rec.LatencyMs,
-		rec.Error,
-	)
-	return err
-}

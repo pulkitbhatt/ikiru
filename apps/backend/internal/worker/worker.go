@@ -18,25 +18,40 @@ const (
 	BlockSeconds      = 3
 	MinIdleSeconds    = 60
 	AutoClaimMsgCount = 50
+
+	// jobs older than this would be considered stale
+	StaleJobThreshold = 2
+	FailureThreshold  = 3
+	ResolveThreshold  = 2
 )
 
 type Worker struct {
-	rdb         *redis.Client
-	monitorRepo *repository.MonitorRepo
-	log         *zerolog.Logger
+	rdb              *redis.Client
+	monitorCheckRepo *repository.MonitorCheckRepo
+	incidentRepo     *repository.IncidentRepo
+
+	log *zerolog.Logger
+
 	stream      string
 	workerName  string
 	concurrency int
 }
 
-func NewWorker(rdb *redis.Client, monitorRepo *repository.MonitorRepo, stream, workerName string, concurrency int, log *zerolog.Logger) *Worker {
+func NewWorker(rdb *redis.Client,
+	monitorCheckRepo *repository.MonitorCheckRepo,
+	incidentRepo *repository.IncidentRepo,
+	stream, workerName string,
+	concurrency int,
+	log *zerolog.Logger,
+) *Worker {
 	return &Worker{
-		rdb:         rdb,
-		monitorRepo: monitorRepo,
-		log:         log,
-		stream:      stream,
-		workerName:  workerName,
-		concurrency: concurrency,
+		rdb:              rdb,
+		monitorCheckRepo: monitorCheckRepo,
+		incidentRepo:     incidentRepo,
+		log:              log,
+		stream:           stream,
+		workerName:       workerName,
+		concurrency:      concurrency,
 	}
 }
 
@@ -76,11 +91,14 @@ func (w *Worker) handleMessage(ctx context.Context, msg redis.XMessage) {
 	start := time.Now()
 	job, err := decodeJob(msg)
 	if err != nil {
-		w.log.Error().Err(err).Msg("failed decoding job")
+		w.log.Error().Err(err).
+			Str("monitor_id", job.MonitorID.String()).
+			Str("region", job.Region).
+			Msg("failed decoding job")
 		return
 	}
 
-	if time.Since(job.ScheduledAt) > 2*time.Minute {
+	if isStaleJob(job.ScheduledAt) {
 		w.log.Info().Str("monitor_id", job.MonitorID.String()).
 			Str("job_id", job.JobID).
 			Str("scheduled_at", job.ScheduledAt.String()).
@@ -103,8 +121,11 @@ func (w *Worker) handleMessage(ctx context.Context, msg redis.XMessage) {
 		result.Error,
 	)
 
-	if err := w.monitorRepo.InsertCheckResult(ctx, res); err != nil {
-		w.log.Error().Err(err).Msg("failed to insert monitor check result")
+	if err := w.monitorCheckRepo.InsertCheckResult(ctx, res); err != nil {
+		w.log.Error().Err(err).
+			Str("monitor_id", job.MonitorID.String()).
+			Str("region", job.Region).
+			Msg("failed to insert monitor check result")
 		return
 	}
 
@@ -116,7 +137,102 @@ func (w *Worker) handleMessage(ctx context.Context, msg redis.XMessage) {
 		Int("latency", result.LatencyMs).
 		Msg("checked monitor")
 
+	w.evaluateIncident(ctx, job)
+
 	w.ack(ctx, msg.ID)
+}
+
+func (w *Worker) evaluateIncident(ctx context.Context, job queue.MonitorJob) {
+	results, err := w.monitorCheckRepo.GetLastNResults(ctx,
+		job.MonitorID,
+		job.Region,
+		max(FailureThreshold, ResolveThreshold),
+	)
+	if err != nil {
+		w.log.Error().Err(err).
+			Str("monitor_id", job.MonitorID.String()).
+			Str("region", job.Region).
+			Msg("failed to fetch last n checks")
+		return
+	}
+
+	allFailures := hasNFailures(results, FailureThreshold)
+
+	openIncident, err := w.incidentRepo.GetOpenIncident(ctx,
+		job.MonitorID,
+		job.Region,
+	)
+	if err != nil {
+		w.log.Error().Err(err).
+			Str("monitor_id", job.MonitorID.String()).
+			Str("region", job.Region).
+			Msg("failed to fetch open incidents")
+		return
+	}
+
+	if allFailures {
+		if openIncident == nil {
+			ok, err := w.incidentRepo.TryCreateIncidentWithOutbox(ctx,
+				job.MonitorID,
+				job.Region,
+				FailureThreshold,
+			)
+			if err != nil {
+				w.log.Error().Err(err).
+					Str("monitor_id", job.MonitorID.String()).
+					Str("region", job.Region).
+					Msg("failed to create new incident")
+				return
+			}
+
+			if ok {
+				w.log.Info().
+					Str("monitor_id", job.MonitorID.String()).
+					Str("region", job.Region).
+					Msg("Created new incident successfully")
+			}
+		} else if isFailure(results[0]) {
+			if err := w.incidentRepo.IncrementFailureCount(ctx,
+				job.MonitorID,
+				job.Region,
+			); err != nil {
+				w.log.Error().Err(err).
+					Str("monitor_id", job.MonitorID.String()).
+					Str("region", job.Region).
+					Msg("failed to increment failure count")
+				return
+			}
+			w.log.Debug().
+				Str("monitor_id", job.MonitorID.String()).
+				Str("region", job.Region).
+				Msg("Incremented failure count successfully")
+		}
+		return
+	}
+
+	if openIncident == nil {
+		return
+	}
+
+	allSuccess := hasNSuccess(results, ResolveThreshold)
+	if !allSuccess {
+		return
+	}
+
+	ok, err := w.incidentRepo.ResolveIncidentWithOutbox(ctx,
+		job.MonitorID,
+		job.Region,
+	)
+	if err != nil {
+		w.log.Error().Err(err).Msg("failed to resolve incident")
+		return
+	}
+	if ok {
+		w.log.Info().
+			Str("monitor_id", job.MonitorID.String()).
+			Str("region", job.Region).
+			Msg("Resolved incident successfully")
+	}
 }
 
 func (w *Worker) ReclaimPending(ctx context.Context) error {
@@ -163,4 +279,36 @@ func decodeJob(msg redis.XMessage) (queue.MonitorJob, error) {
 	payload := msg.Values["payload"].(string)
 	err := json.Unmarshal([]byte(payload), &job)
 	return job, err
+}
+
+func isStaleJob(scheduledAt time.Time) bool {
+	return time.Since(scheduledAt) > (StaleJobThreshold * time.Minute)
+}
+
+func hasNFailures(results []string, n int) bool {
+	if len(results) < n {
+		return false
+	}
+	for i := range n {
+		if !isFailure(results[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func hasNSuccess(results []string, n int) bool {
+	if len(results) < n {
+		return false
+	}
+	for i := range n {
+		if results[i] != "success" {
+			return false
+		}
+	}
+	return true
+}
+
+func isFailure(res string) bool {
+	return res == "failure" || res == "timeout"
 }

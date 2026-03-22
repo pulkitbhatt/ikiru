@@ -12,9 +12,11 @@ type ResultStatus string
 
 const (
 	MaxRetryCount = 2
+	SleepTimeMs   = 100
 
 	StatusSuccess ResultStatus = "success"
 	StatusFailure ResultStatus = "failure"
+	StatusTimeout ResultStatus = "timeout"
 
 	StatusCodeEmpty = 0
 
@@ -67,10 +69,15 @@ func ExecuteHTTPCheck(ctx context.Context, job queue.MonitorJob) CheckResult {
 			lastErr = err
 
 			if ctx.Err() == context.DeadlineExceeded {
-				return failResult(ErrTimeout, ctx.Err(), latency, StatusCodeEmpty)
+				return CheckResult{
+					Status:     StatusTimeout,
+					LatencyMs:  int(latency),
+					HTTPStatus: StatusCodeEmpty,
+					Error:      ErrTimeout + ": " + ctx.Err().Error(),
+				}
 			}
 
-			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+			time.Sleep(time.Duration(attempt+1) * SleepTimeMs * time.Millisecond)
 			continue
 		}
 
@@ -87,6 +94,8 @@ func ExecuteHTTPCheck(ctx context.Context, job queue.MonitorJob) CheckResult {
 			Error:      ErrNon2XXStatus,
 		}
 	}
+
+	// TODO: need to fix this
 	return CheckResult{Error: lastErr.Error()}
 }
 
